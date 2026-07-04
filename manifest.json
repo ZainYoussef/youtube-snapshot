@@ -6,17 +6,16 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "downloads"
+    "downloads",
+    "offscreen",
+    "storage"
   ],
   "host_permissions": [
     "*://*.youtube.com/*"
   ],
   "action": {
-    "default_title": "Take Snapshot"
-  },
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": true
+    "default_title": "YouTube Snapshot Settings",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

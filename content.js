@@ -71,17 +71,16 @@ function takeSnapshot() {
   
   // Convert to PNG asynchronously to PREVENT VIDEO LAG
   canvas.toBlob((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${title}_${width}x${height}_${time}s.png`;
-      
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      // Clean up memory
-      setTimeout(() => URL.revokeObjectURL(url), 100);
+      const reader = new FileReader();
+      reader.onloadend = function() {
+          const filename = `${title}_${width}x${height}_${time}s.png`;
+          chrome.runtime.sendMessage({
+              action: "download_snapshot",
+              dataUrl: reader.result,
+              filename: filename
+          });
+      };
+      reader.readAsDataURL(blob);
   }, 'image/png');
 }
 
