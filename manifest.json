@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Snapshot",
+  "version": "1.0",
+  "description": "Takes a lossless, native-resolution PNG snapshot of a YouTube video.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ],
+  "action": {
+    "default_title": "Take Snapshot"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
