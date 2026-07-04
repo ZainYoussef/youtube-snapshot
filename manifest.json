@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "YouTube Snapshot",
   "version": "1.0",
-  "description": "Takes a lossless, native-resolution PNG snapshot of a YouTube video.",
+  "description": "Easily capture and download high-resolution, lossless PNG screenshots and frames directly from YouTube videos and Shorts.",
+  "author": "Zain Yousef",
   "permissions": [
     "activeTab",
     "scripting",

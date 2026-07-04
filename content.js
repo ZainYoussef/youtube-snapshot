@@ -74,11 +74,19 @@ function takeSnapshot() {
       const reader = new FileReader();
       reader.onloadend = function() {
           const filename = `${title}_${width}x${height}_${time}s.png`;
-          chrome.runtime.sendMessage({
-              action: "download_snapshot",
-              dataUrl: reader.result,
-              filename: filename
-          });
+          try {
+              chrome.runtime.sendMessage({
+                  action: "download_snapshot",
+                  dataUrl: reader.result,
+                  filename: filename
+              });
+          } catch (e) {
+              if (e.message.includes("Extension context invalidated")) {
+                  alert("YouTube Snapshot was updated. Please refresh the page to continue taking snapshots.");
+              } else {
+                  console.error("Snapshot error:", e);
+              }
+          }
       };
       reader.readAsDataURL(blob);
   }, 'image/png');
@@ -86,51 +94,54 @@ function takeSnapshot() {
 
 // Button Injection Logic
 function injectButton() {
-  // Prevent duplicate injections
-  if (document.getElementById('yt-snapshot-btn')) return;
-
   const isShorts = window.location.pathname.startsWith('/shorts');
   
   if (isShorts) {
     // Shorts Injection
-    const actionContainer = document.querySelector('.is-active .ytReelPlayerOverlayViewModelActionsContainer reel-action-bar-view-model') || document.querySelector('.ytReelPlayerOverlayViewModelActionsContainer reel-action-bar-view-model');
-    if (!actionContainer) return;
+    // YouTube preloads multiple shorts for infinite scrolling. Find all their action bars.
+    const actionContainers = document.querySelectorAll('reel-action-bar-view-model');
     
-    const btn = document.createElement('button');
-    btn.id = 'yt-snapshot-btn';
-    btn.setAttribute('aria-label', 'Take Snapshot');
-    btn.title = 'Take Snapshot'; // Simple title for shorts since we're matching standard shorts tooltips
-    
-    // Shorts button styling classes
-    btn.className = 'ytSpecButtonShapeNextHost ytSpecButtonShapeNextTonal ytSpecButtonShapeNextMono ytSpecButtonShapeNextSizeL ytSpecButtonShapeNextIconButton ytSpecButtonShapeNextEnableBackdropFilterExperiment';
-    btn.style.marginBottom = '16px'; // Add space between this and the Like button below it
-    
-    btn.innerHTML = `
-      <div aria-hidden="true" class="ytSpecButtonShapeNextIcon">
-        <span class="ytIconWrapperHost" style="width: 24px; height: 24px;">
-          <span class="yt-icon-shape ytSpecIconShapeHost">
-            <div style="width: 100%; height: 100%; display: block; fill: currentcolor;">
-              <svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor">
-                <path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 14H4V7h4.05l1.83-2h4.24l1.83 2H20v12zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.65 0-3 1.35-3 3s1.35 3 3 3 3-1.35 3-3-1.35-3-3-3z"></path>
-              </svg>
-            </div>
+    actionContainers.forEach(container => {
+      // Prevent duplicate injections on this specific short
+      if (container.querySelector('.yt-snapshot-shorts-btn')) return;
+      
+      const btn = document.createElement('button');
+      // Use a class instead of ID because there will be multiple buttons in the DOM
+      btn.className = 'yt-snapshot-shorts-btn ytSpecButtonShapeNextHost ytSpecButtonShapeNextTonal ytSpecButtonShapeNextMono ytSpecButtonShapeNextSizeL ytSpecButtonShapeNextIconButton ytSpecButtonShapeNextEnableBackdropFilterExperiment';
+      btn.setAttribute('aria-label', 'Take Snapshot');
+      btn.title = 'Take Snapshot'; 
+      btn.style.marginBottom = '16px'; // Add space between this and the Like button below it
+      
+      btn.innerHTML = `
+        <div aria-hidden="true" class="ytSpecButtonShapeNextIcon">
+          <span class="ytIconWrapperHost" style="width: 24px; height: 24px;">
+            <span class="yt-icon-shape ytSpecIconShapeHost">
+              <div style="width: 100%; height: 100%; display: block; fill: currentcolor;">
+                <svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor">
+                  <path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 14H4V7h4.05l1.83-2h4.24l1.83 2H20v12zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.65 0-3 1.35-3 3s1.35 3 3 3 3-1.35 3-3-1.35-3-3-3z"></path>
+                </svg>
+              </div>
+            </span>
           </span>
-        </span>
-      </div>
-    `;
-    
-    btn.addEventListener('click', takeSnapshot);
-    // Insert at the top of the action bar
-    actionContainer.insertBefore(btn, actionContainer.firstChild);
+        </div>
+      `;
+      
+      btn.addEventListener('click', takeSnapshot);
+      // Insert at the top of the action bar
+      container.insertBefore(btn, container.firstChild);
+    });
 
   } else {
     // Normal Watch Page Injection
+    // Prevent duplicate injections
+    if (document.getElementById('yt-snapshot-watch-btn')) return;
+
     const rightControls = document.querySelector('.ytp-right-controls-right') || document.querySelector('.ytp-right-controls');
     if (!rightControls) return;
 
     // Create the button
     const btn = document.createElement('button');
-    btn.id = 'yt-snapshot-btn';
+    btn.id = 'yt-snapshot-watch-btn';
     btn.className = 'ytp-button';
     btn.setAttribute('aria-label', 'Take Snapshot');
     
