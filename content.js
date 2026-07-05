@@ -1,13 +1,51 @@
+// A global flag to track if the extension has been updated/unloaded
+let isExtensionValid = true;
+
+function checkExtensionContext() {
+  if (!chrome.runtime?.id) {
+    isExtensionValid = false;
+    // Clean up global listeners to completely stop execution
+    clearInterval(injectionInterval);
+    document.removeEventListener('keydown', handleKeyboardShortcut);
+    const existingBtn = document.getElementById('yt-snapshot-watch-btn');
+    if (existingBtn) existingBtn.remove();
+    return false;
+  }
+  return true;
+}
+
 function takeSnapshot() {
-  // On Shorts, there are multiple video tags. The active one is inside an element with the '.is-active' class.
-  const video = document.querySelector('.is-active video') || document.querySelector('video');
+  if (!checkExtensionContext()) return;
+
+  const isShorts = window.location.pathname.startsWith('/shorts');
+  let video;
+
+  if (isShorts) {
+    video = document.querySelector('.is-active video') || document.querySelector('[is-active] video');
+  } else {
+    video = document.querySelector('.html5-main-video');
+  }
+
+  if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+    const videos = Array.from(document.querySelectorAll('video'));
+    const validVideos = videos.filter(v => v.videoWidth > 0 && v.videoHeight > 0 && v.readyState >= 2);
+    
+    if (validVideos.length > 0) {
+      const visibleVideo = validVideos.find(v => {
+        const rect = v.getBoundingClientRect();
+        return rect.bottom > 0 && rect.top < window.innerHeight && rect.width > 0;
+      });
+      video = visibleVideo || validVideos[0];
+    }
+  }
+
+  if (!video) video = document.querySelector('video');
 
   if (!video) {
     alert('No video element found. Make sure a video is playing.');
     return;
   }
 
-  // Get the native resolution of the video stream currently loaded
   const width = video.videoWidth;
   const height = video.videoHeight;
 
@@ -16,48 +54,41 @@ function takeSnapshot() {
     return;
   }
 
-  // Create an off-screen canvas with the exact native video resolution
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
 
   const context = canvas.getContext('2d');
-  
-  // Draw the current video frame onto the canvas
   context.drawImage(video, 0, 0, width, height);
 
-  // --- Snapshot Flash Effect (Do this instantly before any processing) ---
+  // --- Safe Flash Effect ---
   const flash = document.createElement('div');
   flash.style.position = 'absolute';
   flash.style.top = '0';
   flash.style.left = '0';
   flash.style.width = '100%';
   flash.style.height = '100%';
-  flash.style.backgroundColor = 'black'; // More subtle color
-  flash.style.zIndex = '9999'; // Ensure it's on top of the video
-  flash.style.opacity = '0.4'; // Less intense opacity
-  flash.style.transition = 'opacity 0.2s ease-out'; // Much quicker fade
-  flash.style.pointerEvents = 'none'; // Don't block clicks
+  flash.style.backgroundColor = 'black';
+  flash.style.zIndex = '2147483647';
+  flash.style.opacity = '0.4';
+  flash.style.transition = 'opacity 0.15s ease-out';
+  flash.style.pointerEvents = 'none';
   
-  // Attach to the main player container (or video parent for shorts)
   const player = document.querySelector('.is-active .html5-video-player') || document.querySelector('.html5-video-player') || video.parentElement;
   if (player) {
       player.appendChild(flash);
-      requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-              flash.style.opacity = '0';
-          });
-      });
+      // Trigger rendering layout before changing opacity to guarantee the transition runs smoothly
+      flash.offsetHeight; 
+      flash.style.opacity = '0';
       setTimeout(() => {
           if (flash.parentElement) flash.parentElement.removeChild(flash);
-      }, 200); // Wait for the 0.2s transition to finish
+      }, 200);
   }
 
-  // Grab the video title for a clean file name (Shorts use a different title element)
+  // --- Title Handling ---
   const titleElement = document.querySelector('h1.ytd-watch-metadata') || document.querySelector('.is-active h2.yt-core-attributed-string');
   let title = 'youtube_snapshot';
   if (titleElement) {
-      // Keep all letters (including Arabic/Unicode) and numbers, replacing others with underscores
       title = titleElement.innerText
           .replace(/[^\p{L}\p{N}]/gu, '_')
           .replace(/_+/g, '_')
@@ -66,51 +97,47 @@ function takeSnapshot() {
       if (!title) title = 'youtube_snapshot'; 
   }
   
-  // Get the current timestamp (in seconds)
   const time = Math.floor(video.currentTime);
   
-  // Convert to PNG asynchronously to PREVENT VIDEO LAG
   canvas.toBlob((blob) => {
+      if (!blob) return;
       const reader = new FileReader();
       reader.onloadend = function() {
-          const filename = `${title}_${width}x${height}_${time}s.png`;
+          if (!checkExtensionContext()) {
+              alert("YouTube Snapshot was updated. Please refresh the page to continue taking snapshots.");
+              return;
+          }
           try {
               chrome.runtime.sendMessage({
                   action: "download_snapshot",
                   dataUrl: reader.result,
-                  filename: filename
+                  filename: `${title}_${width}x${height}_${time}s.png`
               });
           } catch (e) {
-              if (e.message.includes("Extension context invalidated")) {
-                  alert("YouTube Snapshot was updated. Please refresh the page to continue taking snapshots.");
-              } else {
-                  console.error("Snapshot error:", e);
-              }
+              console.error("Snapshot communication error:", e);
           }
       };
       reader.readAsDataURL(blob);
   }, 'image/png');
 }
 
-// Button Injection Logic
+// --- Button Injection Logic ---
 function injectButton() {
+  if (!isExtensionValid) return;
+
   const isShorts = window.location.pathname.startsWith('/shorts');
   
   if (isShorts) {
-    // Shorts Injection
-    // YouTube preloads multiple shorts for infinite scrolling. Find all their action bars.
     const actionContainers = document.querySelectorAll('reel-action-bar-view-model');
     
     actionContainers.forEach(container => {
-      // Prevent duplicate injections on this specific short
       if (container.querySelector('.yt-snapshot-shorts-btn')) return;
       
       const btn = document.createElement('button');
-      // Use a class instead of ID because there will be multiple buttons in the DOM
       btn.className = 'yt-snapshot-shorts-btn ytSpecButtonShapeNextHost ytSpecButtonShapeNextTonal ytSpecButtonShapeNextMono ytSpecButtonShapeNextSizeL ytSpecButtonShapeNextIconButton ytSpecButtonShapeNextEnableBackdropFilterExperiment';
       btn.setAttribute('aria-label', 'Take Snapshot');
       btn.title = 'Take Snapshot'; 
-      btn.style.marginBottom = '16px'; // Add space between this and the Like button below it
+      btn.style.marginBottom = '16px';
       
       btn.innerHTML = `
         <div aria-hidden="true" class="ytSpecButtonShapeNextIcon">
@@ -126,105 +153,98 @@ function injectButton() {
         </div>
       `;
       
-      btn.addEventListener('click', takeSnapshot);
-      // Insert at the top of the action bar
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        takeSnapshot();
+      });
       container.insertBefore(btn, container.firstChild);
     });
 
   } else {
-    // Normal Watch Page Injection
-    // Prevent duplicate injections
     if (document.getElementById('yt-snapshot-watch-btn')) return;
 
     const rightControls = document.querySelector('.ytp-right-controls-right') || document.querySelector('.ytp-right-controls');
     if (!rightControls) return;
 
-    // Create the button
     const btn = document.createElement('button');
     btn.id = 'yt-snapshot-watch-btn';
     btn.className = 'ytp-button';
     btn.setAttribute('aria-label', 'Take Snapshot');
     
-    // Create our own tooltip that perfectly mimics YouTube's style
     btn.addEventListener('mouseenter', () => {
       let tooltip = document.getElementById('yt-snapshot-tooltip');
       if (!tooltip) {
         tooltip = document.createElement('div');
         tooltip.id = 'yt-snapshot-tooltip';
-        tooltip.style.position = 'fixed'; // Safe for getBoundingClientRect
-        tooltip.style.background = 'rgba(28, 28, 28, 0.45)'; // Match the player controls background (even lower opacity)
+        tooltip.style.position = 'fixed';
+        tooltip.style.background = 'rgba(28, 28, 28, 0.5)';
         tooltip.style.color = '#eee';
         tooltip.style.padding = '5px 8px';
-        tooltip.style.borderRadius = '5px'; // Softer, more rounded corners
+        tooltip.style.borderRadius = '8px';
         tooltip.style.fontSize = '12px'; 
         tooltip.style.fontWeight = '500';
         tooltip.style.fontFamily = '"YouTube Noto", Roboto, Arial, sans-serif';
         tooltip.style.pointerEvents = 'none';
-        tooltip.style.zIndex = '99999';
+        tooltip.style.zIndex = '2147483647';
         tooltip.style.whiteSpace = 'nowrap';
         tooltip.style.transition = 'opacity 0.1s ease-in';
         document.body.appendChild(tooltip);
       }
       
-      // Add the text and a stylized 'S' keyboard shortcut indicator in an outlined square
       tooltip.innerHTML = 'Take Snapshot <span style="display:inline-block; margin-left:8px; padding:1px 5px; border:1px solid rgba(255, 255, 255, 0.4); border-radius:4px; font-weight:700; font-size:11px; color:#eee;">S</span>';
       tooltip.style.opacity = '1';
       
       const rect = btn.getBoundingClientRect();
       tooltip.style.left = (rect.left + (rect.width / 2)) + 'px';
-      tooltip.style.top = (rect.top - 46) + 'px'; // Sweet spot for tooltip height
+      tooltip.style.top = (rect.top - 46) + 'px';
       tooltip.style.transform = 'translateX(-50%)';
     });
 
     btn.addEventListener('mouseleave', () => {
       const tooltip = document.getElementById('yt-snapshot-tooltip');
-      if (tooltip) {
-        tooltip.style.opacity = '0';
-      }
+      if (tooltip) tooltip.style.opacity = '0';
     });
     
-    // Camera SVG icon, matching modern YouTube 24x24 icon styling
     btn.innerHTML = `
       <svg height="24" viewBox="0 0 24 24" width="24" fill="white">
         <path d="M20 5h-3.17L15 3H9L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 14H4V7h4.05l1.83-2h4.24l1.83 2H20v12zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.65 0-3 1.35-3 3s1.35 3 3 3 3-1.35 3-3-1.35-3-3-3z"></path>
       </svg>
     `;
 
-    // Listen for clicks to trigger the snapshot
-    btn.addEventListener('click', takeSnapshot);
-
-    // Insert at the beginning of the right controls (before Theater mode)
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      takeSnapshot();
+    });
     rightControls.insertBefore(btn, rightControls.firstChild);
   }
 }
 
-// Because YouTube acts as a Single Page Application (SPA) and loads elements asynchronously,
-// a simple interval is often the most robust way to ensure our button stays injected.
-setInterval(() => {
+// --- Listeners & Loops Management ---
+const injectionInterval = setInterval(() => {
   if (window.location.pathname === '/watch' || window.location.pathname.startsWith('/shorts')) {
     injectButton();
   }
 }, 1000);
 
-// Listen for messages from the background script (for the extension icon click)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "take_snapshot") {
     takeSnapshot();
   }
 });
 
-// Listen for the 's' keyboard shortcut to take a snapshot
-document.addEventListener('keydown', (e) => {
-  // Trigger on 's' or 'S', ignoring modifier keys, and explicitly ignore held down keys (e.repeat)
+function handleKeyboardShortcut(e) {
+  if (!isExtensionValid) return;
+  
   if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
-    // Make sure the user isn't typing in a search bar or comment box
     const activeEl = document.activeElement;
     const isInput = activeEl.tagName === 'INPUT' || 
                     activeEl.tagName === 'TEXTAREA' || 
                     activeEl.isContentEditable;
-                    
+                        
     if (!isInput && (window.location.pathname === '/watch' || window.location.pathname.startsWith('/shorts'))) {
       takeSnapshot();
     }
   }
-});
+}
+
+document.addEventListener('keydown', handleKeyboardShortcut);

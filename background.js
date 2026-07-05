@@ -60,7 +60,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             if (chrome.runtime.lastError) {
               console.error("Download failed:", chrome.runtime.lastError);
             }
-            URL.revokeObjectURL(response.blobUrl);
+            // Blob URL will be cleaned up automatically when the offscreen document closes
           });
         }
       });
