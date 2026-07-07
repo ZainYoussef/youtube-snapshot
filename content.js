@@ -232,19 +232,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+function getDeepActiveElement() {
+  let activeEl = document.activeElement;
+  while (activeEl && activeEl.shadowRoot && activeEl.shadowRoot.activeElement) {
+    activeEl = activeEl.shadowRoot.activeElement;
+  }
+  return activeEl;
+}
+
 function handleKeyboardShortcut(e) {
   if (!isExtensionValid) return;
   
-  if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
-    const activeEl = document.activeElement;
-    const isInput = activeEl.tagName === 'INPUT' || 
-                    activeEl.tagName === 'TEXTAREA' || 
-                    activeEl.isContentEditable;
+  if ((e.code === 'KeyS' || e.key.toLowerCase() === 's') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+    const activeEl = getDeepActiveElement();
+    const isInput = activeEl && (
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName) || 
+      activeEl.isContentEditable
+    );
                         
     if (!isInput && (window.location.pathname === '/watch' || window.location.pathname.startsWith('/shorts'))) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
       takeSnapshot();
     }
   }
 }
 
-document.addEventListener('keydown', handleKeyboardShortcut);
+window.addEventListener('keydown', handleKeyboardShortcut, true);
